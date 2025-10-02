@@ -3,6 +3,7 @@ package com.habbiteditingservice.habbiteditingservice.dto;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class HabitResponse {
@@ -11,7 +12,7 @@ public class HabitResponse {
     private String title;
     private String description;
     private String frequency;
-    private String days;
+    private List<String> days;
     private int streak;
     private int longestStreak;
     private LocalDateTime createdAt;

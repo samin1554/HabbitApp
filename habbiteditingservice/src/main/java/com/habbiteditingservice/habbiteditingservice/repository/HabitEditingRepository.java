@@ -10,16 +10,12 @@ import java.util.Optional;
 @Repository
 public interface HabitEditingRepository extends MongoRepository<Habits, String> {
 
+    // Get all habits for a user
     List<Habits> findByUserId(String userId);
-    Optional<Habits> findByHabitId(String Id);
 
+    // Get a single habit by habitId and userId (ownership enforced)
+    Optional<Habits> findByIdAndUserId(String id, String userId);
+
+    // Get all habits with a specific title for a user
     List<Habits> findByUserIdAndTitle(String userId, String title);
-    List<Habits> findByUserIdAndStreak(String userId, int streak);
-    List<Habits> findByUserIdAndLongestStreak(String userId, int longestStreak);
-
-
-
-
-
-
 }
