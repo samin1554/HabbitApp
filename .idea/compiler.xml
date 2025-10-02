@@ -11,7 +11,7 @@
         </processorPath>
         <module name="habbitactivityservice" />
       </profile>
-      <profile name="Annotation profile for habbitappuserservice" enabled="true">
+      <profile name="Annotation profile for habbiteditingservice" enabled="true">
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
@@ -19,6 +19,7 @@
           <entry name="$MAVEN_REPOSITORY$/org/projectlombok/lombok/1.18.40/lombok-1.18.40.jar" />
         </processorPath>
         <module name="habbitappuserservice" />
+        <module name="habbiteditingservice" />
       </profile>
     </annotationProcessing>
   </component>
@@ -26,6 +27,7 @@
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
       <module name="habbitactivityservice" options="-parameters" />
       <module name="habbitappuserservice" options="-parameters" />
+      <module name="habbiteditingservice" options="-parameters" />
     </option>
   </component>
 </project>
