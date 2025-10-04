@@ -7,6 +7,7 @@
         <option value="$PROJECT_DIR$/habbitappuserservice/pom.xml" />
         <option value="$PROJECT_DIR$/habbitactivityservice/pom.xml" />
         <option value="$PROJECT_DIR$/habbiteditingservice/pom.xml" />
+        <option value="$PROJECT_DIR$/habbitLoggingService/pom.xml" />
       </list>
     </option>
   </component>
