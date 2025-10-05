@@ -55,16 +55,16 @@ public class HabitLoggingController {
 
     /**
      * Get specific habit analytics
-     * GET /api/habit-logs/user/{userId}/habit/{habitTitle}
+     * GET /api/habit-logs/user/{userId}/habit/{habitId}
      */
-    @GetMapping("/user/{userId}/habit/{habitTitle}")
+    @GetMapping("/user/{userId}/habit/{habitId}")
     public ResponseEntity<HabitLogResponse> getHabitAnalytics(
             @PathVariable String userId, 
-            @PathVariable String habitTitle) {
-        log.info("Getting analytics for habit: {} of user: {}", habitTitle, userId);
+            @PathVariable String habitId) {
+        log.info("Getting analytics for habit: {} of user: {}", habitId, userId);
         
         try {
-            HabitLogResponse analytics = habitLoggingService.getHabitAnalytics(userId, habitTitle);
+            HabitLogResponse analytics = habitLoggingService.getHabitAnalytics(userId, habitId);
             return ResponseEntity.ok(analytics);
         } catch (RuntimeException e) {
             log.error("Error getting habit analytics: {}", e.getMessage());
@@ -79,5 +79,60 @@ public class HabitLoggingController {
     @GetMapping("/health")
     public ResponseEntity<String> healthCheck() {
         return ResponseEntity.ok("Habit Logging Service is running!");
+    }
+
+    /**
+     * Test endpoint to check activity service connection
+     * GET /api/habit-logs/test-activity/{habitId}
+     */
+    @GetMapping("/test-activity/{habitId}")
+    public ResponseEntity<String> testActivityServiceConnection(@PathVariable String habitId) {
+        log.info("Testing activity service connection for habitId: {}", habitId);
+        
+        try {
+            // This will help us debug the WebClient connection
+            String result = habitLoggingService.testActivityServiceConnection(habitId);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Error testing activity service connection: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Refresh habit data from activity service
+     * PUT /api/habit-logs/user/{userId}/habit/{habitId}/refresh
+     */
+    @PutMapping("/user/{userId}/habit/{habitId}/refresh")
+    public ResponseEntity<HabitLogResponse> refreshHabitData(
+            @PathVariable String userId, 
+            @PathVariable String habitId) {
+        log.info("Refreshing habit data for habitId: {} of user: {}", habitId, userId);
+        
+        try {
+            HabitLogResponse response = habitLoggingService.refreshHabitData(userId, habitId);
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            log.error("Error refreshing habit data: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    /**
+     * Test endpoint to create habit log without user validation
+     * POST /api/habit-logs/test-complete
+     */
+    @PostMapping("/test-complete")
+    public ResponseEntity<HabitLogResponse> testLogHabitCompletion(@RequestBody HabitLogRequest request) {
+        log.info("TEST: Received habit completion request for user: {}", request.getUserId());
+        
+        try {
+            HabitLogResponse response = habitLoggingService.testCreateHabitLog(request);
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            log.error("TEST: Error logging habit completion: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+        }
     }
 }

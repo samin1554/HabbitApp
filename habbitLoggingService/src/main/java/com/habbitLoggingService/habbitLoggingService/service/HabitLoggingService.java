@@ -1,5 +1,6 @@
 package com.habbitLoggingService.habbitLoggingService.service;
 
+import com.habbitLoggingService.habbitLoggingService.dto.HabitActivityResponse;
 import com.habbitLoggingService.habbitLoggingService.dto.HabitLogRequest;
 import com.habbitLoggingService.habbitLoggingService.dto.HabitLogResponse;
 import com.habbitLoggingService.habbitLoggingService.model.HabitLogs;
@@ -86,19 +87,26 @@ public class HabitLoggingService {
     /**
      * Fetch habit details from Activity Service
      */
-    private HabitActivityData fetchHabitDetails(String habitId) {
+    private HabitActivityResponse fetchHabitDetails(String habitId) {
         try {
             log.info("Fetching habit details for habitId: {}", habitId);
-            return activityServiceWebClient
+            HabitActivityResponse result = activityServiceWebClient
                     .get()
                     .uri("/{id}", habitId)
                     .retrieve()
-                    .bodyToMono(HabitActivityData.class)
-                    .doOnError(error -> log.warn("Error fetching habit details: {}", error.getMessage()))
+                    .bodyToMono(HabitActivityResponse.class)
+                    .doOnSuccess(data -> log.info("Successfully fetched habit details for habitId: {}, title: {}", habitId, data != null ? data.getTitle() : "null"))
+                    .doOnError(error -> log.error("Error fetching habit details for habitId: {}, error: {}", habitId, error.getMessage()))
                     .onErrorReturn(null)
                     .block();
+            
+            if (result == null) {
+                log.warn("Received null response from activity service for habitId: {}", habitId);
+            }
+            
+            return result;
         } catch (Exception e) {
-            log.error("Error fetching habit details for habitId: {}", habitId, e);
+            log.error("Exception while fetching habit details for habitId: {}", habitId, e);
             return null;
         }
     }
@@ -171,34 +179,46 @@ public class HabitLoggingService {
      * Create new habit log entry
      */
     private HabitLogs createNewHabitLog(HabitLogRequest request) {
+        log.info("Creating new habit log for habitId: {}, userId: {}", request.getHabitId(), request.getUserId());
+        
         HabitLogs habitLog = new HabitLogs();
         habitLog.setId(request.getHabitId()); // Set the habit ID
         habitLog.setUserId(request.getUserId()); // Set the user ID
-        habitLog.setTitle("Habit " + request.getHabitId()); // Default title
         
         // Try to fetch real habit details from Activity Service
-        HabitActivityData habitData = fetchHabitDetails(request.getHabitId());
+        HabitActivityResponse habitData = fetchHabitDetails(request.getHabitId());
         if (habitData != null) {
+            log.info("Successfully fetched habit data for habitId: {}, setting details", request.getHabitId());
             habitLog.setTitle(habitData.getTitle() != null ? habitData.getTitle() : "Habit " + request.getHabitId());
             habitLog.setDescription(habitData.getDescription());
             habitLog.setFrequency(habitData.getFrequency());
             habitLog.setDays(habitData.getDays());
-            habitLog.setCreatedAt(habitData.getCreatedAt());
-            habitLog.setUpdatedAt(habitData.getUpdatedAt());
+            habitLog.setCreatedAt(habitData.getCreatedAt() != null ? habitData.getCreatedAt() : LocalDateTime.now());
+            habitLog.setUpdatedAt(LocalDateTime.now());
+            
+            // Copy existing streak data if available
+            habitLog.setStreak(habitData.getStreak() > 0 ? habitData.getStreak() : 1);
+            habitLog.setLongestStreak(habitData.getLongestStreak() > 0 ? habitData.getLongestStreak() : 1);
         } else {
-            log.warn("Could not fetch habit details for habitId: {}", request.getHabitId());
+            log.warn("Could not fetch habit details for habitId: {}, using defaults", request.getHabitId());
+            habitLog.setTitle("Habit " + request.getHabitId());
+            habitLog.setDescription("Default description");
+            habitLog.setFrequency("daily");
             habitLog.setCreatedAt(LocalDateTime.now());
             habitLog.setUpdatedAt(LocalDateTime.now());
+            habitLog.setStreak(1);
+            habitLog.setLongestStreak(1);
         }
         
         habitLog.setStatus(HabitStatus.ACTIVE);
-        habitLog.setStreak(1);
-        habitLog.setLongestStreak(1);
         
         List<LocalDateTime> completions = new ArrayList<>();
         completions.add(request.getCompletionTime());
         habitLog.setCompletionLog(completions);
         habitLog.setLastCompletionDate(request.getCompletionTime());
+        
+        log.info("Created habit log with title: {}, description: {}, frequency: {}", 
+                habitLog.getTitle(), habitLog.getDescription(), habitLog.getFrequency());
         
         return habitLog;
     }
@@ -207,6 +227,9 @@ public class HabitLoggingService {
      * Map entity to response DTO
      */
     private HabitLogResponse mapToResponse(HabitLogs habitLog) {
+        log.debug("Mapping HabitLogs to response - ID: {}, Title: {}, Description: {}, Frequency: {}", 
+                habitLog.getId(), habitLog.getTitle(), habitLog.getDescription(), habitLog.getFrequency());
+        
         HabitLogResponse response = new HabitLogResponse();
         response.setId(habitLog.getId());
         response.setUserId(habitLog.getUserId());
@@ -227,7 +250,13 @@ public class HabitLoggingService {
         if (habitLog.getCompletionLog() != null) {
             response.setTotalCompletions(habitLog.getCompletionLog().size());
             response.setSuccessRate(calculateSuccessRate(habitLog));
+        } else {
+            response.setTotalCompletions(0);
+            response.setSuccessRate(0.0);
         }
+        
+        log.debug("Mapped response - Title: {}, Description: {}, Status: {}", 
+                response.getTitle(), response.getDescription(), response.getStatus());
         
         return response;
     }
@@ -249,51 +278,92 @@ public class HabitLoggingService {
         
         return Math.min(100.0, (actualCompletions / expectedCompletions) * 100.0);
     }
-    
-    /**
-     * Data class to hold habit details from Activity Service
-     */
-    public static class HabitActivityData {
-        private String id;
-        private String userId;
-        private String title;
-        private String description;
-        private String frequency;
-        private List<String> days;
-        private LocalDateTime createdAt;
-        private LocalDateTime updatedAt;
-        private int streak;
-        private int longestStreak;
 
-        // Getters and setters
-        public String getId() { return id; }
-        public void setId(String id) { this.id = id; }
+    /**
+     * Test method to check activity service connection
+     */
+    public String testActivityServiceConnection(String habitId) {
+        try {
+            log.info("Testing connection to activity service for habitId: {}", habitId);
+            
+            // First, let's get the raw JSON response to see what we're receiving
+            String rawResponse = activityServiceWebClient
+                    .get()
+                    .uri("/{id}", habitId)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .doOnSuccess(data -> log.info("Raw JSON response: {}", data))
+                    .block();
+            
+            log.info("Raw response from activity service: {}", rawResponse);
+            
+            // Now try to parse it as our DTO
+            HabitActivityResponse result = activityServiceWebClient
+                    .get()
+                    .uri("/{id}", habitId)
+                    .retrieve()
+                    .bodyToMono(HabitActivityResponse.class)
+                    .doOnSuccess(data -> log.info("Test successful - received data: {}", data))
+                    .doOnError(error -> log.error("Test failed with error: {}", error.getMessage()))
+                    .block();
+            
+            if (result != null) {
+                return String.format("SUCCESS: Connected to activity service. Raw JSON: %s\nParsed - ID: %s, Title: %s, Description: %s, Frequency: %s", 
+                        rawResponse, result.getId(), result.getTitle(), result.getDescription(), result.getFrequency());
+            } else {
+                return "FAILED: Received null response from activity service. Raw JSON: " + rawResponse;
+            }
+        } catch (Exception e) {
+            log.error("Exception during activity service test: {}", e.getMessage(), e);
+            return "ERROR: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Refresh habit data from activity service for existing logs
+     */
+    public HabitLogResponse refreshHabitData(String userId, String habitId) {
+        log.info("Refreshing habit data for habitId: {}, userId: {}", habitId, userId);
         
-        public String getUserId() { return userId; }
-        public void setUserId(String userId) { this.userId = userId; }
+        Optional<HabitLogs> existingLog = repository.findByIdAndUserId(habitId, userId);
+        if (existingLog.isEmpty()) {
+            throw new RuntimeException("Habit log not found: " + habitId);
+        }
         
-        public String getTitle() { return title; }
-        public void setTitle(String title) { this.title = title; }
+        HabitLogs habitLog = existingLog.get();
         
-        public String getDescription() { return description; }
-        public void setDescription(String description) { this.description = description; }
+        // Fetch fresh data from activity service
+        HabitActivityResponse habitData = fetchHabitDetails(habitId);
+        if (habitData != null) {
+            log.info("Updating habit log with fresh data from activity service");
+            habitLog.setTitle(habitData.getTitle());
+            habitLog.setDescription(habitData.getDescription());
+            habitLog.setFrequency(habitData.getFrequency());
+            habitLog.setDays(habitData.getDays());
+            habitLog.setUpdatedAt(LocalDateTime.now());
+            
+            HabitLogs savedLog = repository.save(habitLog);
+            return mapToResponse(savedLog);
+        } else {
+            log.warn("Could not refresh habit data - activity service returned null");
+            return mapToResponse(habitLog);
+        }
+    }
+
+    /**
+     * Test method to create a habit log without user validation (for debugging)
+     */
+    public HabitLogResponse testCreateHabitLog(HabitLogRequest request) {
+        log.info("TEST: Creating habit log without user validation for habitId: {}, userId: {}", 
+                request.getHabitId(), request.getUserId());
         
-        public String getFrequency() { return frequency; }
-        public void setFrequency(String frequency) { this.frequency = frequency; }
+        // Skip user validation for testing
+        HabitLogs habitLog = createNewHabitLog(request);
+        HabitLogs savedLog = repository.save(habitLog);
         
-        public List<String> getDays() { return days; }
-        public void setDays(List<String> days) { this.days = days; }
+        log.info("TEST: Saved habit log with title: {}, description: {}", 
+                savedLog.getTitle(), savedLog.getDescription());
         
-        public LocalDateTime getCreatedAt() { return createdAt; }
-        public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
-        
-        public LocalDateTime getUpdatedAt() { return updatedAt; }
-        public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
-        
-        public int getStreak() { return streak; }
-        public void setStreak(int streak) { this.streak = streak; }
-        
-        public int getLongestStreak() { return longestStreak; }
-        public void setLongestStreak(int longestStreak) { this.longestStreak = longestStreak; }
+        return mapToResponse(savedLog);
     }
 }
