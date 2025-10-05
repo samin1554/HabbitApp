@@ -16,8 +16,8 @@ import java.util.List;
 public class HabitLogs {
 
     @Id
-    private String id;
-    private String userId;
+    private String id; // This is the habit ID (same as in other services)
+    private String userId; // This is the user ID (same as in other services)
     private String title;
     private String description;
     private String frequency; // e.g., "daily", "3 times per week"

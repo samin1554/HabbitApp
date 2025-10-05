@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -37,14 +38,14 @@ public class HabitLoggingService {
         }
 
         // Find or create habit log
-        Optional<HabitLogs> existingLog = repository.findByUserIdAndTitle(request.getUserId(), request.getHabitId());
+        Optional<HabitLogs> existingLog = repository.findByIdAndUserId(request.getHabitId(), request.getUserId());
         HabitLogs habitLog;
         
         if (existingLog.isPresent()) {
             habitLog = existingLog.get();
             updateHabitCompletion(habitLog, request.getCompletionTime());
         } else {
-            // Create new habit log (you might want to fetch habit details from activity service)
+            // Create new habit log (fetch habit details from activity service)
             habitLog = createNewHabitLog(request);
         }
 
@@ -71,15 +72,35 @@ public class HabitLoggingService {
     /**
      * Get specific habit analytics
      */
-    public HabitLogResponse getHabitAnalytics(String userId, String habitTitle) {
-        log.info("Getting analytics for habit: {} of user: {}", habitTitle, userId);
+    public HabitLogResponse getHabitAnalytics(String userId, String habitId) {
+        log.info("Getting analytics for habit: {} of user: {}", habitId, userId);
         
-        Optional<HabitLogs> habitLog = repository.findByUserIdAndTitle(userId, habitTitle);
+        Optional<HabitLogs> habitLog = repository.findByIdAndUserId(habitId, userId);
         if (habitLog.isEmpty()) {
-            throw new RuntimeException("Habit not found: " + habitTitle);
+            throw new RuntimeException("Habit not found: " + habitId);
         }
 
         return mapToResponse(habitLog.get());
+    }
+
+    /**
+     * Fetch habit details from Activity Service
+     */
+    private HabitActivityData fetchHabitDetails(String habitId) {
+        try {
+            log.info("Fetching habit details for habitId: {}", habitId);
+            return activityServiceWebClient
+                    .get()
+                    .uri("/{id}", habitId)
+                    .retrieve()
+                    .bodyToMono(HabitActivityData.class)
+                    .doOnError(error -> log.warn("Error fetching habit details: {}", error.getMessage()))
+                    .onErrorReturn(null)
+                    .block();
+        } catch (Exception e) {
+            log.error("Error fetching habit details for habitId: {}", habitId, e);
+            return null;
+        }
     }
 
     /**
@@ -151,10 +172,25 @@ public class HabitLoggingService {
      */
     private HabitLogs createNewHabitLog(HabitLogRequest request) {
         HabitLogs habitLog = new HabitLogs();
-        habitLog.setUserId(request.getUserId());
-        habitLog.setTitle(request.getHabitId()); // Using habitId as title for now
-        habitLog.setCreatedAt(LocalDateTime.now());
-        habitLog.setUpdatedAt(LocalDateTime.now());
+        habitLog.setId(request.getHabitId()); // Set the habit ID
+        habitLog.setUserId(request.getUserId()); // Set the user ID
+        habitLog.setTitle("Habit " + request.getHabitId()); // Default title
+        
+        // Try to fetch real habit details from Activity Service
+        HabitActivityData habitData = fetchHabitDetails(request.getHabitId());
+        if (habitData != null) {
+            habitLog.setTitle(habitData.getTitle() != null ? habitData.getTitle() : "Habit " + request.getHabitId());
+            habitLog.setDescription(habitData.getDescription());
+            habitLog.setFrequency(habitData.getFrequency());
+            habitLog.setDays(habitData.getDays());
+            habitLog.setCreatedAt(habitData.getCreatedAt());
+            habitLog.setUpdatedAt(habitData.getUpdatedAt());
+        } else {
+            log.warn("Could not fetch habit details for habitId: {}", request.getHabitId());
+            habitLog.setCreatedAt(LocalDateTime.now());
+            habitLog.setUpdatedAt(LocalDateTime.now());
+        }
+        
         habitLog.setStatus(HabitStatus.ACTIVE);
         habitLog.setStreak(1);
         habitLog.setLongestStreak(1);
@@ -212,5 +248,52 @@ public class HabitLoggingService {
         double actualCompletions = habitLog.getCompletionLog().size();
         
         return Math.min(100.0, (actualCompletions / expectedCompletions) * 100.0);
+    }
+    
+    /**
+     * Data class to hold habit details from Activity Service
+     */
+    public static class HabitActivityData {
+        private String id;
+        private String userId;
+        private String title;
+        private String description;
+        private String frequency;
+        private List<String> days;
+        private LocalDateTime createdAt;
+        private LocalDateTime updatedAt;
+        private int streak;
+        private int longestStreak;
+
+        // Getters and setters
+        public String getId() { return id; }
+        public void setId(String id) { this.id = id; }
+        
+        public String getUserId() { return userId; }
+        public void setUserId(String userId) { this.userId = userId; }
+        
+        public String getTitle() { return title; }
+        public void setTitle(String title) { this.title = title; }
+        
+        public String getDescription() { return description; }
+        public void setDescription(String description) { this.description = description; }
+        
+        public String getFrequency() { return frequency; }
+        public void setFrequency(String frequency) { this.frequency = frequency; }
+        
+        public List<String> getDays() { return days; }
+        public void setDays(List<String> days) { this.days = days; }
+        
+        public LocalDateTime getCreatedAt() { return createdAt; }
+        public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+        
+        public LocalDateTime getUpdatedAt() { return updatedAt; }
+        public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+        
+        public int getStreak() { return streak; }
+        public void setStreak(int streak) { this.streak = streak; }
+        
+        public int getLongestStreak() { return longestStreak; }
+        public void setLongestStreak(int longestStreak) { this.longestStreak = longestStreak; }
     }
 }
