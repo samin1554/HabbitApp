@@ -15,8 +15,11 @@ public interface HabitLoggingRepository extends MongoRepository<HabitLogs, Strin
     // Find all habits for a user
     List<HabitLogs> findByUserId(String userId);
     
-    // Find a specific habit log by user and habit title
-    Optional<HabitLogs> findByUserIdAndTitle(String userId, String title);
+    // Find a specific habit log by habit ID
+    Optional<HabitLogs> findById(String id);
+    
+    // Find a specific habit log by user ID and habit ID
+    Optional<HabitLogs> findByIdAndUserId(String id, String userId);
     
     // Find habits by status
     List<HabitLogs> findByUserIdAndStatus(String userId, com.habbitLoggingService.habbitLoggingService.model.HabitStatus status);
